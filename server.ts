@@ -4,8 +4,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { auditLog } from "./server/middleware/auditLog.js";
 import authRoutes from "./server/routes/auth.js";
+import agentRouter from "./server/routes/agent.js";
 import healthRoutes from "./server/routes/health.js";
 import opsRoutes from "./server/routes/tasks.js";
+import webhooksRouter from "./server/routes/webhooks.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -18,8 +20,10 @@ app.use(express.json());
 app.use("/api", auditLog);
 
 app.use("/api/auth", authRoutes);
+app.use("/api/agent", agentRouter);
 app.use("/api", healthRoutes);
 app.use("/api", opsRoutes);
+app.use("/api/webhooks/n8n", webhooksRouter);
 
 if (!isDev) {
   const clientDist = path.join(__dirname, "dist/client");
