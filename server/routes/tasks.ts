@@ -4,8 +4,9 @@
 import crypto from "crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth } from "../middleware/requireAuth.js";
+import { requireAuth, type AuthRequest } from "../middleware/requireAuth.js";
 import type { AgendaSlot, ProductivitySummary, Task, TaskStatus } from "../types.js";
+import { emitEvent } from "../events/emitter.js";
 
 const router = Router();
 
@@ -62,7 +63,7 @@ const createTaskSchema = z.object({
 });
 
 // POST /api/tasks — create a task
-router.post("/tasks", (req, res) => {
+router.post("/tasks", (req: AuthRequest, res) => {
   const parsed = createTaskSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Solicitud inválida" });
@@ -88,6 +89,14 @@ router.post("/tasks", (req, res) => {
     action: "create",
   });
 
+  emitEvent(
+    "operations.task.created",
+    { taskId: task.id, title: task.title, assignee: task.assignee, priority: task.priority },
+    "HD-OPERATIONS",
+    { id: req.user?.sub ?? "system", type: req.user ? "user" : "system" },
+    correlationId
+  );
+
   return res.status(201).json({ task });
 });
 
@@ -96,7 +105,7 @@ const patchTaskSchema = z
   .optional();
 
 // PATCH /api/tasks/:id — advance status (or set explicitly)
-router.patch("/tasks/:id", (req, res) => {
+router.patch("/tasks/:id", (req: AuthRequest, res) => {
   const task = tasks.find((t) => t.id === req.params.id);
   if (!task) {
     return res.status(404).json({ error: "Tarea no encontrada" });
@@ -105,6 +114,7 @@ router.patch("/tasks/:id", (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Solicitud inválida" });
   }
+  const fromStatus = task.status;
   task.status = parsed.data?.status ?? advanceStatus(task.status);
 
   // Audit stub: a real AuditEntry (actorType "user") must be persisted here.
@@ -115,6 +125,14 @@ router.patch("/tasks/:id", (req, res) => {
     platform: "HD-OPERATIONS",
     action: "update",
   });
+
+  emitEvent(
+    "operations.task.status_changed",
+    { taskId: task.id, fromStatus, toStatus: task.status },
+    "HD-OPERATIONS",
+    { id: req.user?.sub ?? "system", type: req.user ? "user" : "system" },
+    task.correlationId
+  );
 
   return res.json({ task });
 });
