@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OperationalTask {
+  id           String   @id @default(uuid())
+  title        String
+  description  String?
+  assignedTo   String
+  supervisorId String?
+  status       String   @default("pending")
+  priority     String   @default("medium")
+  dueAt        DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model OperationalAgendaItem {
+  id         String   @id @default(uuid())
+  title      String
+  assignedTo String
+  startsAt   DateTime
+  endsAt     DateTime?
+  status     String   @default("scheduled")
+  createdAt  DateTime @default(now())
+}
+
+model ProductivitySnapshot {
+  id                   String   @id @default(uuid())
+  userId               String
+  periodStart          DateTime
+  periodEnd            DateTime
+  tasksCompleted       Int      @default(0)
+  tasksBlocked         Int      @default(0)
+  agendaItemsCompleted Int      @default(0)
+  score                Float    @default(0)
+  createdAt            DateTime @default(now())
+}
