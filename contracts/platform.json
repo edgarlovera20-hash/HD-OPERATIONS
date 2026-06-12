@@ -1,0 +1,6 @@
+{
+  "repository": "HD-OPERATIONS",
+  "ecosystem": "Heavenly Dreams",
+  "status": "bootstrap",
+  "requires": ["HD-CORE"]
+}
