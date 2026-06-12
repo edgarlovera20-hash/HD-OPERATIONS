@@ -169,3 +169,33 @@ router.get("/productivity", (_req, res) => {
 });
 
 export default router;
+
+// addOnboardingTask — called by event ingest when rh.candidate.hired fires.
+// Creates a high-priority onboarding task without HTTP auth (internal trigger).
+export function addOnboardingTask(candidateId: string, correlationId: string): void {
+  const task: Task = {
+    id: `tsk_${crypto.randomUUID().slice(0, 8)}`,
+    title: `Onboarding: nuevo colaborador (candidato ${candidateId})`,
+    assignee: "Supervisor de Operaciones",
+    status: "todo",
+    priority: "high",
+    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    correlationId,
+  };
+  tasks.push(task);
+  console.log(`[AUDIT STUB] task.onboarding.create`, {
+    resourceType: "task",
+    resourceId: task.id,
+    correlationId,
+    platform: "HD-OPERATIONS",
+    action: "create",
+    trigger: "rh.candidate.hired",
+  });
+  emitEvent(
+    "operations.task.created",
+    { taskId: task.id, title: task.title, assignee: task.assignee, priority: task.priority, trigger: "rh.candidate.hired" },
+    "HD-OPERATIONS",
+    { id: "system", type: "system" },
+    correlationId
+  );
+}
