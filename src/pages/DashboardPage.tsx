@@ -1,352 +1,225 @@
-import { Calendar, CheckSquare, Clock, LogOut, Plus, TrendingUp } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
+import {
+  CheckSquare, Clock, AlertCircle, Briefcase, TrendingUp, Timer,
+  Plus, Eye,
+} from "lucide-react";
+import { MetricCard } from "../components/ui/MetricCard";
+import { DataTable } from "../components/ui/DataTable";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { PageHeader } from "../components/ui/PageHeader";
 
-type TaskStatus = "todo" | "in_progress" | "done";
-type TaskPriority = "low" | "medium" | "high";
+type TaskStatus = "todo" | "in_progress" | "review" | "done";
+type Priority = "high" | "medium" | "low";
+type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
 
-interface Task {
+interface ActiveTask {
   id: string;
-  title: string;
+  name: string;
+  project: string;
   assignee: string;
+  priority: Priority;
   status: TaskStatus;
-  priority: TaskPriority;
   dueDate: string;
-  correlationId: string;
 }
 
-interface AgendaSlot {
+interface RecentTicket {
   id: string;
-  time: string;
   title: string;
-  durationMin: number;
+  priority: Priority;
+  status: TicketStatus;
+  assignee: string;
+  created: string;
 }
 
-interface ProductivitySummary {
-  tasksCompleted: number;
-  tasksPending: number;
-  completionRate: number;
-  topAssignees: Array<{ assignee: string; completed: number }>;
-}
+const activeTasks: ActiveTask[] = [
+  { id: "T-001", name: "Actualizar SOP de onboarding", project: "Procesos RH", assignee: "Ana López", priority: "high", status: "in_progress", dueDate: "14 Jun" },
+  { id: "T-002", name: "Revisar proceso de facturación mensual", project: "Finanzas", assignee: "Carlos Ruiz", priority: "high", status: "review", dueDate: "15 Jun" },
+  { id: "T-003", name: "Configurar integración WhatsApp Business", project: "TI", assignee: "Miguel Torres", priority: "medium", status: "in_progress", dueDate: "18 Jun" },
+  { id: "T-004", name: "Preparar informe de productividad Q2", project: "Reportes", assignee: "Sofia Mendez", priority: "medium", status: "todo", dueDate: "20 Jun" },
+  { id: "T-005", name: "Capacitación sistema nuevo CRM", project: "CRM", assignee: "Laura Díaz", priority: "high", status: "in_progress", dueDate: "16 Jun" },
+  { id: "T-006", name: "Revisión de contratos de proveedores", project: "Legal", assignee: "Ricardo García", priority: "low", status: "todo", dueDate: "25 Jun" },
+  { id: "T-007", name: "Optimizar flujo de aprobaciones", project: "Operaciones", assignee: "Paola Sánchez", priority: "medium", status: "review", dueDate: "17 Jun" },
+  { id: "T-008", name: "Migración base de datos a producción", project: "TI", assignee: "Miguel Torres", priority: "high", status: "in_progress", dueDate: "13 Jun" },
+  { id: "T-009", name: "Actualizar políticas de privacidad", project: "Legal", assignee: "Ana López", priority: "medium", status: "todo", dueDate: "22 Jun" },
+  { id: "T-010", name: "Auditoría de permisos de usuarios", project: "Seguridad", assignee: "Carlos Ruiz", priority: "high", status: "done", dueDate: "12 Jun" },
+];
 
-const statusLabels: Record<TaskStatus, string> = {
-  todo: "Por hacer",
-  in_progress: "En progreso",
-  done: "Completada",
+const recentTickets: RecentTicket[] = [
+  { id: "TKT-089", title: "Error en módulo de facturación", priority: "high", status: "open", assignee: "Miguel Torres", created: "Hoy 09:14" },
+  { id: "TKT-088", title: "Acceso denegado al sistema CRM", priority: "high", status: "in_progress", assignee: "Ana López", created: "Hoy 08:30" },
+  { id: "TKT-087", title: "Falla en envío de correos automáticos", priority: "medium", status: "in_progress", assignee: "Carlos Ruiz", created: "Ayer 17:45" },
+  { id: "TKT-086", title: "Reporte de nómina no generado", priority: "high", status: "resolved", assignee: "Sofia Mendez", created: "Ayer 14:20" },
+  { id: "TKT-085", title: "Lentitud en portal de clientes", priority: "medium", status: "resolved", assignee: "Ricardo García", created: "Ayer 11:00" },
+];
+
+const priorityLabels: Record<Priority, { label: string; color: string }> = {
+  high: { label: "Alta", color: "#EF4444" },
+  medium: { label: "Media", color: "#F59E0B" },
+  low: { label: "Baja", color: "#10B981" },
 };
 
-const statusStyles: Record<TaskStatus, string> = {
-  todo: "bg-[#334155]/40 text-[#9CA3AF] border-[#334155]",
-  in_progress: "bg-[#F59E0B]/15 text-[#F59E0B] border-[#F59E0B]/30",
-  done: "bg-[#10B981]/15 text-[#10B981] border-[#10B981]/30",
-};
-
-const priorityStyles: Record<TaskPriority, string> = {
-  low: "bg-[#9CA3AF]",
-  medium: "bg-[#00A3FF]",
-  high: "bg-[#EF4444]",
-};
-
-const priorityLabels: Record<TaskPriority, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-};
-
-export default function DashboardPage() {
-  const { user, token, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [agenda, setAgenda] = useState<AgendaSlot[]>([]);
-  const [productivity, setProductivity] = useState<ProductivitySummary | null>(null);
-  const [error, setError] = useState("");
-
-  const [title, setTitle] = useState("");
-  const [assignee, setAssignee] = useState("");
-  const [priority, setPriority] = useState<TaskPriority>("medium");
-  const [dueDate, setDueDate] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const authHeaders = useCallback(
-    () => ({ Authorization: `Bearer ${token ?? ""}` }),
-    [token]
-  );
-
-  const loadData = useCallback(async () => {
-    try {
-      const [tRes, aRes, pRes] = await Promise.all([
-        fetch("/api/tasks", { headers: authHeaders() }),
-        fetch("/api/agenda", { headers: authHeaders() }),
-        fetch("/api/productivity", { headers: authHeaders() }),
-      ]);
-      if (tRes.status === 401 || aRes.status === 401 || pRes.status === 401) {
-        logout();
-        navigate("/login", { replace: true });
-        return;
-      }
-      const tData = await tRes.json();
-      const aData = await aRes.json();
-      const pData = await pRes.json();
-      setTasks(tData.tasks ?? []);
-      setAgenda(aData.agenda ?? []);
-      setProductivity(pData.productivity ?? null);
-    } catch {
-      setError("No se pudieron cargar los datos de operaciones.");
-    }
-  }, [authHeaders, logout, navigate]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  function handleLogout() {
-    logout();
-    navigate("/login", { replace: true });
-  }
-
-  async function handleAddTask(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !assignee.trim() || !dueDate) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title, assignee, priority, dueDate }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "No se pudo crear la tarea.");
-        return;
-      }
-      setTitle("");
-      setAssignee("");
-      setPriority("medium");
-      setDueDate("");
-      await loadData();
-    } catch {
-      setError("Error de conexión al crear la tarea.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleAdvance(taskId: string) {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({}),
-      });
-      if (res.ok) await loadData();
-    } catch {
-      setError("No se pudo actualizar la tarea.");
-    }
-  }
-
-  const completionPct = productivity
-    ? Math.round(productivity.completionRate * 100)
-    : 0;
-
-  return (
-    <div className="min-h-screen bg-[#0A0F1C] text-[#F9FAFB]">
-      <header className="bg-[#111827] border-b border-[#1F2937] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#0066FF] flex items-center justify-center">
-            <CheckSquare className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-white" style={{ fontFamily: "Poppins, sans-serif" }}>
-            HD Operations
+const taskColumns = [
+  {
+    key: "id",
+    header: "ID",
+    width: "80px",
+    render: (row: ActiveTask) => (
+      <span className="text-[#94A3B8] font-mono text-xs">{row.id}</span>
+    ),
+  },
+  {
+    key: "name",
+    header: "Tarea",
+    render: (row: ActiveTask) => (
+      <span className="text-white font-medium">{row.name}</span>
+    ),
+  },
+  {
+    key: "project",
+    header: "Proyecto",
+    render: (row: ActiveTask) => (
+      <span className="text-[#94A3B8]">{row.project}</span>
+    ),
+  },
+  {
+    key: "assignee",
+    header: "Responsable",
+    render: (row: ActiveTask) => (
+      <div className="flex items-center gap-2">
+        <div className="w-6 h-6 rounded-full bg-[#0066FF]/20 flex items-center justify-center flex-shrink-0">
+          <span className="text-[#0066FF] text-[9px] font-bold">
+            {row.assignee.charAt(0)}
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[#9CA3AF] text-sm">{user?.email ?? "Ops"}</span>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-[#9CA3AF] hover:text-white transition-colors text-sm"
-          >
-            <LogOut className="w-4 h-4" />
-            Salir
+        <span className="text-[#94A3B8]">{row.assignee}</span>
+      </div>
+    ),
+  },
+  {
+    key: "priority",
+    header: "Prioridad",
+    render: (row: ActiveTask) => (
+      <span style={{ color: priorityLabels[row.priority].color }} className="text-xs font-medium">
+        {priorityLabels[row.priority].label}
+      </span>
+    ),
+  },
+  {
+    key: "status",
+    header: "Estado",
+    render: (row: ActiveTask) => <StatusBadge status={row.status} />,
+  },
+  {
+    key: "dueDate",
+    header: "Vence",
+    render: (row: ActiveTask) => (
+      <span className="text-[#94A3B8]">{row.dueDate}</span>
+    ),
+  },
+];
+
+const ticketColumns = [
+  {
+    key: "id",
+    header: "ID",
+    width: "90px",
+    render: (row: RecentTicket) => (
+      <span className="text-[#94A3B8] font-mono text-xs">{row.id}</span>
+    ),
+  },
+  {
+    key: "title",
+    header: "Ticket",
+    render: (row: RecentTicket) => (
+      <span className="text-white font-medium">{row.title}</span>
+    ),
+  },
+  {
+    key: "priority",
+    header: "Prioridad",
+    render: (row: RecentTicket) => (
+      <span style={{ color: priorityLabels[row.priority].color }} className="text-xs font-medium">
+        {priorityLabels[row.priority].label}
+      </span>
+    ),
+  },
+  {
+    key: "status",
+    header: "Estado",
+    render: (row: RecentTicket) => <StatusBadge status={row.status} />,
+  },
+  {
+    key: "assignee",
+    header: "Asignado",
+    render: (row: RecentTicket) => (
+      <span className="text-[#94A3B8]">{row.assignee}</span>
+    ),
+  },
+  {
+    key: "created",
+    header: "Creado",
+    render: (row: RecentTicket) => (
+      <span className="text-[#94A3B8]">{row.created}</span>
+    ),
+  },
+];
+
+export default function DashboardPage() {
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="Centro de Operaciones"
+        description="Panel de control operativo — Heavenly Dreams"
+        actions={
+          <button className="flex items-center gap-2 bg-[#0066FF] hover:bg-[#0052CC] text-white text-sm font-medium px-4 py-2.5 rounded-[14px] transition-colors">
+            <Plus className="w-4 h-4" />
+            Nueva Tarea
+          </button>
+        }
+      />
+
+      {/* Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <MetricCard title="Tareas Activas" value="47" change="+5 hoy" trend="up"
+          icon={CheckSquare} iconColor="#0066FF" iconBg="rgba(0,102,255,0.12)" />
+        <MetricCard title="Completadas Hoy" value="23" change="+8 vs ayer" trend="up"
+          icon={CheckSquare} iconColor="#10B981" iconBg="rgba(16,185,129,0.12)" />
+        <MetricCard title="Tickets Abiertos" value="12" change="-3 hoy" trend="down" downIsGood
+          icon={AlertCircle} iconColor="#EF4444" iconBg="rgba(239,68,68,0.12)" />
+        <MetricCard title="Proyectos Activos" value="8" change="Sin cambios" trend="neutral"
+          icon={Briefcase} iconColor="#00A3FF" iconBg="rgba(0,163,255,0.12)" />
+        <MetricCard title="Productividad" value="87%" change="+3% esta semana" trend="up"
+          icon={TrendingUp} iconColor="#F59E0B" iconBg="rgba(245,158,11,0.12)" />
+        <MetricCard title="Tiempo Promedio" value="2.4h" change="-0.3h vs ayer" trend="down" downIsGood
+          icon={Timer} iconColor="#10B981" iconBg="rgba(16,185,129,0.12)" />
+      </div>
+
+      {/* Active Tasks Table */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white" style={{ fontFamily: "Poppins, sans-serif" }}>
+            Tareas Activas
+          </h2>
+          <button className="flex items-center gap-1.5 text-[#94A3B8] hover:text-white text-sm transition-colors">
+            <Eye className="w-4 h-4" />
+            Ver todas
           </button>
         </div>
-      </header>
+        <DataTable columns={taskColumns} data={activeTasks} emptyMessage="No hay tareas activas" />
+      </div>
 
-      <main className="max-w-6xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Poppins, sans-serif" }}>
-            Operaciones diarias
-          </h1>
-          <p className="text-[#9CA3AF] mt-1 text-sm">
-            Tareas, agenda y productividad del equipo operativo
-          </p>
+      {/* Recent Tickets */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white" style={{ fontFamily: "Poppins, sans-serif" }}>
+            Tickets Recientes
+          </h2>
+          <button className="flex items-center gap-1.5 text-[#94A3B8] hover:text-white text-sm transition-colors">
+            <Eye className="w-4 h-4" />
+            Ver todos
+          </button>
         </div>
-
-        {error && (
-          <div className="mb-6 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Productivity summary cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-[#10B981]/10 flex items-center justify-center">
-                <CheckSquare className="w-5 h-5 text-[#10B981]" />
-              </div>
-              <span className="text-[#9CA3AF] text-sm">Completadas</span>
-            </div>
-            <p className="text-3xl font-bold text-white">
-              {productivity?.tasksCompleted ?? 0}
-            </p>
-          </div>
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-[#F59E0B]/10 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-[#F59E0B]" />
-              </div>
-              <span className="text-[#9CA3AF] text-sm">Pendientes</span>
-            </div>
-            <p className="text-3xl font-bold text-white">
-              {productivity?.tasksPending ?? 0}
-            </p>
-          </div>
-          <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-[#0066FF]/10 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-[#0066FF]" />
-              </div>
-              <span className="text-[#9CA3AF] text-sm">Tasa de cumplimiento</span>
-            </div>
-            <p className="text-3xl font-bold text-white">{completionPct}%</p>
-            {productivity && productivity.topAssignees.length > 0 && (
-              <p className="text-[#9CA3AF] text-xs mt-2">
-                Líder: {productivity.topAssignees[0].assignee} (
-                {productivity.topAssignees[0].completed})
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Task board */}
-          <section className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckSquare className="w-5 h-5 text-[#0066FF]" />
-              <h2 className="font-semibold text-[#F9FAFB]">Tablero de tareas</h2>
-            </div>
-
-            {/* Add task form */}
-            <form
-              onSubmit={handleAddTask}
-              className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3"
-            >
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Título de la tarea"
-                className="px-3 py-2 rounded-lg bg-[#161F33] border border-[#334155] text-[#F9FAFB] placeholder-[#6B7280] text-sm focus:outline-none focus:border-[#0066FF]"
-              />
-              <input
-                type="text"
-                required
-                value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
-                placeholder="Responsable"
-                className="px-3 py-2 rounded-lg bg-[#161F33] border border-[#334155] text-[#F9FAFB] placeholder-[#6B7280] text-sm focus:outline-none focus:border-[#0066FF]"
-              />
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                className="px-3 py-2 rounded-lg bg-[#161F33] border border-[#334155] text-[#F9FAFB] text-sm focus:outline-none focus:border-[#0066FF]"
-              >
-                <option value="low">Prioridad: Baja</option>
-                <option value="medium">Prioridad: Media</option>
-                <option value="high">Prioridad: Alta</option>
-              </select>
-              <input
-                type="date"
-                required
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-[#161F33] border border-[#334155] text-[#F9FAFB] text-sm focus:outline-none focus:border-[#0066FF]"
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="sm:col-span-2 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[#0066FF] hover:bg-[#0052CC] disabled:opacity-50 text-white font-medium text-sm transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                {submitting ? "Agregando..." : "Agregar tarea"}
-              </button>
-            </form>
-
-            <div className="space-y-3">
-              {tasks.map((task) => (
-                <button
-                  key={task.id}
-                  onClick={() => handleAdvance(task.id)}
-                  title="Clic para avanzar el estado"
-                  className="w-full text-left bg-[#111827] border border-[#1F2937] rounded-xl p-4 hover:border-[#0066FF] hover:bg-[#161F33] transition-all"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${priorityStyles[task.priority]}`}
-                        title={`Prioridad ${priorityLabels[task.priority]}`}
-                      />
-                      <div>
-                        <p className="text-[#F9FAFB] font-medium text-sm">{task.title}</p>
-                        <p className="text-[#9CA3AF] text-xs mt-1">
-                          {task.assignee} · vence {task.dueDate} · {priorityLabels[task.priority]}
-                        </p>
-                      </div>
-                    </div>
-                    <span
-                      className={`text-xs px-2 py-1 rounded-md border flex-shrink-0 ${statusStyles[task.status]}`}
-                    >
-                      {statusLabels[task.status]}
-                    </span>
-                  </div>
-                </button>
-              ))}
-              {tasks.length === 0 && (
-                <p className="text-[#9CA3AF] text-sm">No hay tareas registradas.</p>
-              )}
-            </div>
-          </section>
-
-          {/* Today's agenda */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <Calendar className="w-5 h-5 text-[#0066FF]" />
-              <h2 className="font-semibold text-[#F9FAFB]">Agenda de hoy</h2>
-            </div>
-            <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 space-y-4">
-              {agenda.map((slot) => (
-                <div key={slot.id} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <span className="text-[#0066FF] text-sm font-semibold">{slot.time}</span>
-                    <span className="w-px flex-1 bg-[#1F2937] mt-1" />
-                  </div>
-                  <div className="pb-2">
-                    <p className="text-[#F9FAFB] text-sm">{slot.title}</p>
-                    <p className="text-[#9CA3AF] text-xs mt-0.5">{slot.durationMin} min</p>
-                  </div>
-                </div>
-              ))}
-              {agenda.length === 0 && (
-                <p className="text-[#9CA3AF] text-sm">Sin eventos programados.</p>
-              )}
-            </div>
-          </section>
-        </div>
-      </main>
+        <DataTable columns={ticketColumns} data={recentTickets} emptyMessage="No hay tickets" />
+      </div>
     </div>
   );
 }
