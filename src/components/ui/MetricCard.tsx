@@ -6,7 +6,7 @@ interface MetricCardProps {
   change: string;
   trend: "up" | "down" | "neutral";
   downIsGood?: boolean;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   iconColor?: string;
   iconBg?: string;
 }
