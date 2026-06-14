@@ -1,3 +1,4 @@
+import type { ComponentType, CSSProperties } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface MetricCardProps {
@@ -6,7 +7,7 @@ interface MetricCardProps {
   change: string;
   trend: "up" | "down" | "neutral";
   downIsGood?: boolean;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; style?: CSSProperties }>;
   iconColor?: string;
   iconBg?: string;
 }
